@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +14,8 @@ import {
   Trash2,
   Download,
   Share2,
-  Edit
+  Edit,
+  FolderPlus
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -46,6 +46,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Media } from '@/types';
+import { useMedia } from '@/contexts/MediaContext';
+import { FolderDialog } from '@/components/media/FolderDialog';
+import { Folder } from 'lucide-react';
 
 const MediaGallery = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -183,6 +186,32 @@ const MediaGallery = () => {
     alert('Media uploaded successfully! (This is a demo)');
   };
 
+  const { folders, addMediaToFolder, deleteFolder, deleteMediaFromFolder } = useMedia();
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+
+  // Handle media actions
+  const handleDelete = (mediaId: string) => {
+    if (selectedFolder) {
+      deleteMediaFromFolder(selectedFolder, mediaId);
+    }
+  };
+
+  const handleAddToFolder = (mediaItem: Media, folderId: string) => {
+    addMediaToFolder(folderId, mediaItem);
+  };
+
+  const handleDeleteFolder = (folderId: string) => {
+    deleteFolder(folderId);
+    if (selectedFolder === folderId) {
+      setSelectedFolder(null);
+    }
+  };
+
+  // Filter media based on selected folder
+  const displayedMedia = selectedFolder
+    ? folders.find(f => f.id === selectedFolder)?.media || []
+    : filteredMedia;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -303,22 +332,62 @@ const MediaGallery = () => {
           />
         </div>
         
-        <div className="w-full md:w-1/3 flex justify-end">
-          <Select defaultValue="all">
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Filter by Event" />
+        <div className="w-full md:w-1/3 flex justify-end gap-2">
+          <FolderDialog events={events} />
+          <Select
+            value={selectedFolder || "all"}
+            onValueChange={(value) => setSelectedFolder(value === "all" ? null : value)}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue>
+                {selectedFolder
+                  ? folders.find(f => f.id === selectedFolder)?.name || "Select Folder"
+                  : "All Media"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Events</SelectItem>
-              {events.map(event => (
-                <SelectItem key={event.id} value={event.id}>
-                  {event.title}
+              <SelectItem value="all">All Media</SelectItem>
+              {folders.map(folder => (
+                <SelectItem key={folder.id} value={folder.id}>
+                  <div className="flex items-center gap-2">
+                    <Folder className="h-4 w-4" />
+                    {folder.name}
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
+
+      {folders.length > 0 && !selectedFolder && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+          {folders.map(folder => (
+            <div key={folder.id} className="p-4 border rounded-lg hover:bg-accent cursor-pointer"
+                 onClick={() => setSelectedFolder(folder.id)}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Folder className="h-5 w-5" />
+                  <span className="font-medium">{folder.name}</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteFolder(folder.id);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {folder.media.length} items
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <Tabs defaultValue="all" className="w-full">
         <TabsList className="grid w-full grid-cols-3 mb-4">
@@ -343,7 +412,7 @@ const MediaGallery = () => {
         
         {/* All Media */}
         <TabsContent value="all">
-          {filteredMedia.length === 0 ? (
+          {displayedMedia.length === 0 ? (
             <Card>
               <CardContent className="py-8 flex flex-col items-center">
                 <Image className="h-12 w-12 text-muted-foreground mb-4" />
@@ -362,7 +431,7 @@ const MediaGallery = () => {
           ) : (
             viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredMedia.map(item => (
+                {displayedMedia.map(item => (
                   <MediaGridItem 
                     key={item.id} 
                     item={item}
@@ -374,7 +443,7 @@ const MediaGallery = () => {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredMedia.map(item => (
+                {displayedMedia.map(item => (
                   <MediaListItem
                     key={item.id}
                     item={item}
@@ -499,7 +568,13 @@ const MediaGridItem: React.FC<MediaItemProps> = ({
   getMemberName,
   formatDate
 }) => {
+  const { folders, addMediaToFolder } = useMedia();
   const eventName = getEventName(item.eventId);
+  const [showFolderMenu, setShowFolderMenu] = useState(false);
+
+  const handleAddToFolder = (mediaItem: Media, folderId: string) => {
+    addMediaToFolder(folderId, mediaItem);
+  };
   
   return (
     <div className="group relative bg-muted rounded-lg overflow-hidden shadow hover:shadow-md transition-all">
@@ -519,13 +594,37 @@ const MediaGridItem: React.FC<MediaItemProps> = ({
         
         {/* Overlay with actions */}
         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-          <Button variant="secondary" size="icon" className="h-9 w-9">
-            <Download className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="secondary" size="icon" className="h-9 w-9">
+                <FolderPlus className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuLabel>Add to Folder</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {folders.map(folder => (
+                <DropdownMenuItem 
+                  key={folder.id}
+                  onClick={() => handleAddToFolder(item, folder.id)}
+                >
+                  {folder.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button variant="secondary" size="icon" className="h-9 w-9">
             <Share2 className="h-4 w-4" />
           </Button>
-          <Button variant="destructive" size="icon" className="h-9 w-9">
+          <Button 
+            variant="destructive" 
+            size="icon" 
+            className="h-9 w-9"
+            onClick={() => {
+              //e.stopPropagation();
+              //handleDelete(item.id);
+            }}
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
